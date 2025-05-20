@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: f1-backend
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: "python app.py"
