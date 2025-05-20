@@ -6,11 +6,11 @@ Created on Tue May 20 17:28:31 2025
 @author: slebcir
 """
 
+# app.py
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import json
 import os
-from datetime import datetime
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
@@ -20,85 +20,64 @@ COMMENTS_FILE = "comments.json"
 
 # Charger les utilisateurs
 if os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "r") as f:
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
         users = json.load(f)
 else:
-    users = {}
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
+    users = []
 
 # Charger les commentaires
 if os.path.exists(COMMENTS_FILE):
-    with open(COMMENTS_FILE, "r") as f:
-        commentaires = json.load(f)
+    with open(COMMENTS_FILE, "r", encoding="utf-8") as f:
+        comments = json.load(f)
 else:
-    commentaires = []
-    with open(COMMENTS_FILE, "w") as f:
-        json.dump(commentaires, f)
-
+    comments = []
 
 @app.route("/register", methods=["POST"])
 def register():
-    data = request.get_json()
+    data = request.json
     pseudo = data.get("pseudo")
     password = data.get("password")
-
     if not pseudo or not password:
         return jsonify({"error": "Champs manquants"}), 400
-
-    if pseudo in users:
+    if any(u["pseudo"] == pseudo for u in users):
         return jsonify({"error": "Pseudo déjà pris"}), 409
-
-    users[pseudo] = password
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
-
+    users.append({"pseudo": pseudo, "password": password})
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
     return jsonify({"message": "Compte créé"}), 201
-
 
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.get_json()
+    data = request.json
     pseudo = data.get("pseudo")
     password = data.get("password")
+    if any(u["pseudo"] == pseudo and u["password"] == password for u in users):
+        return jsonify({"message": "Connexion réussie"})
+    return jsonify({"error": "Identifiants invalides"}), 401
 
-    if users.get(pseudo) != password:
-        return jsonify({"error": "Identifiants incorrects"}), 401
+@app.route("/comments", methods=["GET"])
+def get_comments():
+    type_graphique = request.args.get("type")
+    grand_prix = request.args.get("gp")
+    cible = request.args.get("cible")
+    if not type_graphique or not grand_prix or cible is None:
+        return jsonify({"error": "Paramètres manquants"}), 400
+    filtres = [c for c in comments if c["type_graphique"] == type_graphique and c["grand_prix"] == grand_prix and c["cible"] == str(cible)]
+    return jsonify(filtres)
 
-    return jsonify({"message": "Connexion réussie"}), 200
+@app.route("/comments", methods=["POST"])
+def post_comment():
+    data = request.json
+    required = ["auteur", "contenu", "type_graphique", "grand_prix", "cible"]
+    if not all(k in data for k in required):
+        return jsonify({"error": "Champs requis manquants"}), 400
 
-
-@app.route("/comments", methods=["GET", "POST"])
-def comments():
-    if request.method == "GET":
-        type_graphique = request.args.get("type")
-        gp = request.args.get("gp")
-        cible = request.args.get("cible")
-
-        results = [c for c in commentaires if c["type_graphique"] == type_graphique and c["grand_prix"] == gp and str(c["cible"]) == str(cible)]
-        return jsonify(results)
-
-    elif request.method == "POST":
-        data = request.get_json()
-        commentaire = {
-            "auteur": data.get("auteur"),
-            "contenu": data.get("contenu"),
-            "type_graphique": data.get("type_graphique"),
-            "grand_prix": data.get("grand_prix"),
-            "cible": data.get("cible"),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        commentaires.append(commentaire)
-        with open(COMMENTS_FILE, "w") as f:
-            json.dump(commentaires, f, indent=2)
-        return jsonify({"message": "Commentaire ajouté"}), 201
-
-
-@app.route("/", methods=["GET"])
-def home():
-    return "✅ Backend F1 commentaires actif."
-
+    from datetime import datetime
+    data["timestamp"] = datetime.utcnow().isoformat()
+    comments.append(data)
+    with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(comments, f, indent=2)
+    return jsonify({"message": "Commentaire enregistré"}), 201
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
